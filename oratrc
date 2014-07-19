@@ -1,0 +1,155 @@
+#!/bin/env perl
+use feature 'state';
+use FileHandle;
+use strict;
+# ---------------------------------------------------------------------
+# $Id: oratrc,v 1.2 2014/04/08 07:29:55 youki Exp $
+#
+# ---------------------------------------------------------------------
+# $Log: oratrc,v $
+# Revision 1.2  2014/04/08 07:29:55  youki
+# Maintenance
+#
+# Revision 1.1  2014/03/31 15:17:57  Youki
+# Reecriture, defaut de conception initial
+#
+#
+# ---------------------------------------------------------------------
+
+
+# On veut pouvoir récapituler les durées des exécutions individuelles d'un SQL
+# particulier, au format suivant:
+#			     parse			exec		fetch		
+# timestamp	plan	count	ela	cpu	ela	cpu	count	ela	cpu	rows
+# 
+# Pour ceci, on a les regles suivantes:
+
+# Un PARSING IN CURSOR définit systématiquement une nouvelle exécution
+# Un PARSE définit une nouvelle exécution, s'il n'est pas précédé par un PARSING IN CURSOR
+# Un EXEC définit une nouvelle exécution s'il n'est pas précédé par un PARSE
+# Un STAT définit une fin d'exécution - et il n'est pas systématiquement présent
+# Un CLOSE définit une fin d'exécution
+# Une nouvelle exécution implique une fin d'exécution pour le curseur courant.
+
+# Attention, tout ceci n'est valide que dans le cadre d'un curseur unique, afin d'éviter
+# les ennuis qui pourraient venir de l'entrelacement de l'exécution du même SQL dans deux
+# curseurs distincts.
+#
+# On va donc définir une exécution de la manière suivante:
+#
+# %curex	= (
+# 			base_timestamp	=>	ts du début de l'exécution,
+#			sql_id		=>	id du sql exécuté
+#			plan_hash	=>	valeur de hash du plan,
+# 			current_action	=>	parsing/parse/exec/fetch,
+# 			counts		=>	[(cnt,	cpu,	ela),(cnt, cpu, ela), (cnt, cpu, ela)], un element pour chaque action
+#			rows		=>	nb de lignes fetchées
+#			waits		=>	hash au format %waits défini plus bas
+#		);
+
+# les exécutions courantes sont associées au curseur dans lequel elles ont lieu.
+# Pour ceci, on utilisera un hash dont les clés seront des id de curseur et les
+# valeurs des hash au format %curex défini ci-dessus
+
+our $ac;
+
+# En fin d'exécution (définie par:
+# 	- une fermeture de curseur,
+# 	- la fin d'un fichier de trace,
+# 	- une nouvelle exécution dans le même curseur
+# on historisera l'exécution dans un hash dont les clés seront des sql_id et les
+# valeurs des arrays de %curex.
+
+%as=();
+
+sub is_new_exec {
+	state %new_op = ( 	PARSE	=> 1, EXEC => 1, "PARSING IN CURSOR" => 2 );
+	my ($op, $c) = @_;	# operation et id de curseur
+	if (not defined $ac{$c}) { return 1;}	# le curseur n'existe pas
+	if (not $new_op{$op}) { return 0; }	# ni parse, ni exec
+	if ($new_op{$op} == 2 ) { return 1; }	# parsing in cursor définit toujours une nlle exec
+	if (($op eq "PARSE") && ($ac{$c}{current_action} eq "PARSING IN CURSOR")) 
+	{return 0;} # Parse ne definit une nouvelle execution qu'après autre chose que PIC
+	if (($op eq "EXEC") && ($ac{$c}{current_action} eq "PARSE"))
+	{return 0;} # dans ce cas, PARSE a deja flaggé la nouvelle exec
+	return 1;
+} # is_new_exec
+my $unknown_sql = 0;	# gestion des traces incomplètes
+# ----------------------------------------------------
+# historize
+#     
+sub historize {
+	my ($cursor) = @_;
+	my $sql_id = ($ac{$cursor}{sql_id})?$ac{$cursor}{sql_id}:sprintf("UNKNOWN%05d", ++$unknown_sql );
+	push @{$as{$sql_id}}, $ac{$cursor}; delete $ac{cursor};
+}  
+# Il est envisageable (trace partielle) que l'on n'ait pas de sql_id,
+
+# Les attentes peuvent ou non être présentes, on les stockera donc dans un hash
+# dont les clés seront des identifiants de curseur et les valeurs un hash de wait events
+# au format suivant:
+# %indiv_wait	= (	count	=>	nombre de signalement du wait
+# 			total	=>	somme des attentes en microsecondes
+# 			min	=>	durée minimum,
+# 			max	=>	durée maximum
+
+%wait=();
+
+# On decrit maintenant :
+# 	- la manière d'identifier une action élémentaire (match d'une expression régulière)
+# 	- la manière d'en extraire les informations (affectation de variables)
+# Cette description comprend donc une chaine de caractères et une fonction
+# ------ PARSE/EXEC/FETCH ---------------------------------------------------
+my $pef_match = '^(\w+) #(\d+):c=(\d+),e=(\d+),p=(\d+),cr=(\d+),cu=(\d+),mis=(\d+),r=(\d+),dep=(\d+),og=(\d+),plh=(\d+),tim=(\d+)';
+
+sub pef_elem {
+	my (	$type	# 1 Nature de l'opération (PARSE/EXEC/FETCH)
+		$c,	# 2 id de curseur
+		$cpu,	# 3 conso CPU
+		$ela,	# 4 duree 
+		$phy,	# 5 lectures physiques
+		$cr,	# 6 lectures consistantes
+		$cu,	# 7 lectures en mode courant
+		$mis,	# 8 curseur non trouvé dans le cache
+		$rows,	# 9 nombre de lignes ramené
+		$dep,	# 10 degré d'imbrication de l'ordre
+		$og,	# 11 mode d'optimisation
+		$plh,	# 12 valeur de hachage du plan d'exécution
+		$tim,	# 13 timestamp de l'opération
+	) = ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13);
+
+	if (is_new_exec( $type, $c ) {
+		historize( $c , 0 );
+		$ac{$c} 
+	}
+}
+
+# On donne ici les expressions régulières utilisées pour identifier les lignes de trace
+# L'ordre est important, puisque l'index dans l'array correspond à celui de la fonction de traitement
+# dans la liste suivante
+%match	= (
+		fetch	=> [ 	expr => '^(FETCH)'.$pef_match,		decode => \&pef_elem, ],
+		parse	=> [ 	expr => '^(PARSE)'.$pef_match,		decode => \&pef_elem, ],
+		exec	=> [ 	expr => '^(EXEC)'.$pef_match,		decode => \&pef_elem, ],
+		pic	=> [ 	expr =>
+				'^(PARSING IN CURSOR) #(\d+) len=(\d+) dep=(\d+) uid=(\d+) oct=(\d+) lid=(\d+) tim=(\d+) hv=(\d+) ad=\'(\w+)\' sqlid=\'(\w+)\'',
+				decode => \&pic_elem,
+			],
+		stat	=> [	expr => '^(STAT) #(\d+) id=(\d+) cnt=(\d+) pid=(\d+) pos=(\d+) obj=(\d+) op=\'([^\']+)\'',
+				decode => \&stat_elem,
+			]
+		wait	=> [	expr => '^(WAIT) #(\d+): nam=\'([^\']+)\' ela= (\d+)',
+				decode => \&wait_elem,
+			],
+		close	=> [	expr => 
+);
+
+			
+
+################# main #######################
+
+while (<>) {
+	for $m (@match) {
+		if (/$m/) 
+	}
+}

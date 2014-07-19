@@ -1,0 +1,735 @@
+#!/bin/env perl 
+use FileHandle;
+use Text::Wrap;
+use Storable qw(dclone);
+use Getopt::Long;
+use Data::Dumper;
+use strict;
+use warnings;
+# ---------------------------------------------------------------------
+# $Id: trcparser,v 1.11 2014/05/23 07:38:18 youki Exp $
+#
+# ---------------------------------------------------------------------
+# $Log: trcparser,v $
+# Revision 1.11  2014/05/23 07:38:18  youki
+# Work in progress
+#
+# Revision 1.10  2014/05/12 15:27:38  Youki
+# Options prises en compte
+#
+# Revision 1.9  2014-05-12 15:23:05  Youki
+# Integration du numero de version
+#
+# Revision 1.8  2014-05-12 15:19:37  Youki
+# Gestion des options
+#
+# Revision 1.7  2014-05-05 22:24:32  youki
+# Structure de données prête pour l'affichage non agrégé
+#
+# Revision 1.6  2014/05/04 14:18:36  youki
+# Fix divers.
+# Commit prealable à l'implémentation de l'affichage non agrégé
+#
+# Revision 1.5  2014/04/08 07:29:55  youki
+# Maintenance
+#
+# Revision 1.4  2014/03/31 15:17:57  Youki
+# Reecriture, defaut de conception initial
+#
+# Revision 1.3  2014-03-31 08:45:50  Youki
+# Ajout d'un header et d'un log
+#
+# ---------------------------------------------------------------------
+our $program="trcparser";
+(my $version)='$Revision: 1.11 $' =~ /([\d\.]+)/;
+our $debug="setup|CLOSE";
+our $cursor;
+our $uid;
+our $tim;
+our $sqlid;
+
+our $first_tim;
+our $last_tim;
+
+our $type;
+our $cpu;
+our $ela;
+our $dr;
+our $cr;
+our $cu;
+our $mis;
+our $rows;
+our $dep;
+our $og;
+our $plh;
+our $cltyp;
+our $rank;
+our $pos;
+our $op;
+our $ev;
+our $wela;
+our $k;
+our $id;
+our $ofs;
+our $plan;
+our $fmtop;
+# ---------------------------------------------------------------------
+# Options
+our $infile;							# nom du fichier d'entrée [obligatoire]
+our $outfile;							# nom du fichier de sortie 
+our $top=-1;							# nb de sql affichés (-1 -> tout)
+our $aggregate=1;						# agregation par defaut des executions
+our $sys=0;								# non affichage par def. des ordres SYS
+our $waits=0;							# non affichage par def. des attentes
+our $sort="ela";						# tri par défaut sur la durée d'exécution
+our $help=0;
+our $INF;								# Handle du fichier d'entrée
+our $OUTF;								# Handle du fichier de sortie
+# Non paramétrable pour l'instant
+#	-> longueur maximale de ligne pour le formatage SQL
+our $sqlmaxlen = 80;
+$Text::Wrap::columns = $sqlmaxlen;
+$Text::Wrap::break=qr/(\s|(?=,))/;
+our $pretty_delim = "=" x $sqlmaxlen;
+
+
+sub usage {
+print <<__HERE;
+$program - $version
+Usage: $program -infile tracefile [-outfile outputfile]
+              [-print] [-aggregate] [-sys] [-waits] [-sort]
+  print=integer    List only the first 'integer' SQL statements.
+  aggregate=yes|no
+  sys=no           $program does not list SQL statements run as user SYS.
+  waits=yes|no     Record summary for any wait events found in the trace file.
+  sort=option      One of the following sort options:
+    prscnt  number of times parse was called
+    prscpu  cpu time parsing
+    prsela  elapsed time parsing
+    prsdsk  number of disk reads during parse
+    prsqry  number of buffers for consistent read during parse
+    prscu   number of buffers for current read during parse
+    prsmis  number of misses in library cache during parse
+    execnt  number of execute was called
+    execpu  cpu time spent executing
+    exeela  elapsed time executing
+    exedsk  number of disk reads during execute
+    exeqry  number of buffers for consistent read during execute
+    execu   number of buffers for current read during execute
+    exerow  number of rows processed during execute
+    exemis  number of library cache misses during execute
+    fchcnt  number of times fetch was called
+    fchcpu  cpu time spent fetching
+    fchela  elapsed time fetching
+    fchdsk  number of disk reads during fetch
+    fchqry  number of buffers for consistent read during fetch
+    fchcu   number of buffers for current read during fetch
+    fchrow  number of rows fetched
+    userid  userid of user that parsed the cursor
+__HERE
+} # usage
+
+sub process_options {
+	GetOptions(
+		"infile=s"		=> \$infile,
+		"outfile=s"		=>	\$outfile,
+		"print=i"		=> \$top,
+		"aggregate"		=> \$aggregate,
+		"sys"				=> \$sys,
+		"waits"			=> \$waits,
+		"sort=s"			=> \$sort,
+		"help"			=> \$help,
+	);
+
+	if ($help || ! defined $infile) {
+		usage();
+		exit(0);
+	}
+
+	# ouverture du fichier d'entrée
+	open $INF, "<$infile" || die "Impossible d'ouvrir le fichier en entrée $infile: $!\n";
+	if (defined $outfile) {
+		open $OUTF, ">$outfile" || die "Impossible d'ouvrir le fichier en sortie $outfile: $!\n";
+	} else { $OUTF=*STDOUT; }
+
+	$OUTF->autoflush(1);
+	
+	print Dumper( $OUTF );
+} # process_options
+
+our %ac; # cursors
+# indexes par des id de curseurs
+#
+# 	
+our %as; # sql_ids
+our %aw; # waits
+our %plans; # execution plans
+
+# On veut pouvoir récapituler les durées des exécutions individuelles d'un SQL
+# particulier, au format suivant:
+#			     parse			exec		fetch		
+# timestamp	plan	count	ela	cpu	ela	cpu	count	ela	cpu	rows
+# 
+# Pour ceci, on a les regles suivantes:
+
+# Un PARSING IN CURSOR définit systématiquement une nouvelle exécution
+# Un PARSE définit une nouvelle exécution, s'il n'est pas précédé par un PARSING IN CURSOR
+# Un EXEC définit une nouvelle exécution s'il n'est pas précédé par un PARSE
+# Un STAT définit une fin d'exécution - et il n'est pas systématiquement présent
+# Une nouvelle exécution implique une fin d'exécution pour le curseur courant.
+
+# Attention, tout ceci n'est valide que dans le cadre d'un curseur unique, afin d'éviter
+# les ennuis qui pourraient venir de l'entrelacement de l'exécution du même SQL dans deux
+# curseurs distincts.
+#
+# On va donc définir une exécution de la manière suivante:
+#
+# %curex	= (
+# 			base_timestamp	=>	ts du début de l'exécution,
+#			sql_id		=>	id du sql exécuté
+#			plan_hash	=>	valeur de hash du plan,
+# 			current_action	=>	parsing/parse/exec/fetch,
+# 			counts		=>	[(cnt,	cpu,	ela),(cnt, cpu, ela), (cnt, cpu, ela)], un element pour chaque action
+#			rows		=>	nb de lignes fetchées
+#		);
+
+# Comme on l'a expliqué plus haut, cette structure doit être attachée au curseur plutot 
+# qu'au sql_id jusqu'à la fin de l'exécution.
+# En fin d'exécution, le %curex doit être poussé dans une liste historique liée au sql_id, donc
+# dans le hash des sqlid %as.
+
+sub save_current_exec_specs {
+	my ($c) = @_;	# id de curseur 
+	if (defined $ac{$c}{current}) { 
+		my $xxx = dclone( $ac{$c}{current} );
+		push @{$as{$ac{$c}{sqlid}}{history}}, $xxx;  # sauvegarde de l'exécution courante
+		$ac{$c}{current} = ();			   # RAZ de l'exécution courante
+	}
+}
+
+sub add_action_steps {
+	my (	$c,		# id de curseur
+			$type,	# action PARSE/EXEC/FETCH
+			$cpu,		# conso CPU
+			$ela,		# durée écoulée
+			$dr,		# lectures physiques
+			$cr,		# lectures consistentes
+			$cu,		# lectures en mode courant
+			$mis,		# miss en shared pool
+			$rows,	# nombre de lignes
+			$dep,		# degré de récursivité
+			$og,		# mode d'optimisation
+			$plh,		# valeur de hash du plan
+			$tim		# horodatage de l'action
+		) = @_;
+	our $cnt=1;
+	no strict;
+	for my $m (qw(cpu ela dr cr cu rows mis cnt)) {
+		$ac{$c}{current}{$type}{$m} += $$m;
+		$ac{$c}{current}{$m} 		 += $$m;
+	}
+	use strict;
+	if ($tim) { $ac{$c}{current}{last_tim} = $tim; }
+	if ($plh) { $ac{$c}{current}{plan_hash} = $plh; }
+	$ac{$c}{current}{current_action} = $type;
+} # add_action_steps
+
+sub setup_new_exec {
+	my (	$c,	# id de curseur
+		$type,	# type d'action (PARSING IN CURSOR / PARSE ou EXEC
+		$s,		# sql_id
+		$plh,		# hash value du plan
+		$tim, 	# timestamp
+		) = @_;	# un id de curseur, un sql_id, un plan hash, un timestamp, 
+	save_current_exec_specs($c);	# sauvegarde de l'exécution courante
+	$ac{$c}{sql_id}						=	$s;
+	$ac{$c}{current}{base_timestamp}	=	$tim;
+	if ($plh) { $ac{$c}{current}{plan_hash}		=	$plh; }
+	if ($debug =~ /sne/) { printf( "sne: plh for %s is %s\n", $c, $plh ); }
+	$ac{$c}{current}{current_action}	=	$type;
+}
+
+sub is_new_exec {
+	my (	$c,		# id de curseur
+		$type,		# $type d'action
+	) = @_;
+	my @newxact = ( "PARSE", "EXEC", "PARSING IN CURSOR" );
+#	printf( "is_new_exec : %s upon %s\n", $type, $ac{$c}{current}{current_action} );
+	if (grep {/$type/} @newxact) {
+		if ($type eq "PARSE" && $ac{$c}{current}{current_action} eq "PARSING IN CURSOR") {
+#			print "PARSE upon PIC: returning 0\n";
+			return 0;
+		}
+		if ($type eq "EXEC"  && $ac{$c}{current}{current_action} eq "PARSE") {
+#			print "EXEC upon PARSE: returning 0\n";
+			return 0;
+		}
+		return 1;
+	}
+	return 0;
+} # is_new_exec
+
+sub elem {
+	my (	$c,		# id de curseur
+			$type,	# action PARSE/EXEC/FETCH
+			$cpu,		# conso CPU
+			$ela,		# durée écoulée
+			$dr,		# lectures physiques
+			$cr,		# lectures consistentes
+			$cu,		# lectures en mode courant
+			$mis,		# miss en shared pool
+			$rows,	# nombre de lignes
+			$dep,		# degré de récursivité
+			$og,		# mode d'optimisation
+			$plh,		# valeur de hash du plan
+			$tim		# horodatage de l'action
+		) = @_;
+	if (is_new_exec($c,$type)) { setup_new_exec( $c, $type, $ac{$c}{sql_id}, $plh, $tim); }
+	add_action_steps($c,$type,$cpu,$ela,$dr,$cr,$cu,$mis,$rows,$dep,$og,$plh,$tim);
+} # elem
+
+sub close { 
+	my ($c,$cpu,$ela,$tim) = @_;   # un id de curseur, CPU et durée elapsed, timestamp 
+	if ($debug =~ /CLOSE/) { printf("CLO #%ld cpu:%d, ela:%d,tim:%ld\n", $cursor,$cpu,$ela,$tim ); }
+	add_action_steps( $c, "CLOSE", $cpu, $ela, 0,0,0,0,0,0,0,0, $tim  );
+}
+		
+# On identifie une nature de ligne avec un match (nnnmatch), on en extrait les champs
+# pertinents avec une affectation (nnnexp), puis on travaille le résultat avec une 
+# fonction (recap_xxxx)
+# 
+
+## +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+## tuple %basetrc des PARSING IN CURSOR
+##
+our $picmatch = '^PARSING IN CURSOR #(\d+) len=(\d+) dep=(\d+) uid=(\d+) oct=(\d+) lid=(\d+) tim=(\d+) hv=(\d+) ad=\'(\w+)\' sqlid=\'(\w+)\'';
+our $picexp =  '($cursor,$uid,$tim,$sqlid) = ($1,$4,$7,$10)';
+sub recap_parsing {
+	if ($debug =~ /PIC/) { printf("PIC #%ld uid:%d, tim:%ld, sqlid:%s\n", $cursor,$uid,$tim,$sqlid ); }
+	setup_new_exec($cursor, "PARSING IN CURSOR", $sqlid, -1, $tim);
+	$ac{$cursor}{sqlid} = $sqlid;
+	if (defined $as{$sqlid}{text} ) {return;}
+	while (readline($INF)) {
+		if ($_ =~ /^END OF STMT/) { return; } else { $as{$sqlid}{text} .= $_;}
+	}
+} # recap_parsing
+
+## +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+## tuple %basetrc des PARSE/EXEC/FETCH
+##
+our $pefmatch = '^(PARSE|EXEC|FETCH) #(\d+):c=(\d+),e=(\d+),p=(\d+),cr=(\d+),cu=(\d+),mis=(\d+),r=(\d+),dep=(\d+),og=(\d+),plh=(\d+),tim=(\d+)';
+our $pefexp = '($type,$cursor,$cpu,$ela,$dr,$cr,$cu,$mis,$rows,$dep,$og,$plh,$tim) = ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)';
+sub recap_pef {
+	my $useless = shift;
+	my $cursql = $ac{$cursor}{sqlid};
+	$as{$cursql}{$type}{count}++;
+	$as{$cursql}{count}++;
+	if (!grep $plh, @{$as{$cursql}{all_plans}} ) {
+		push @{$as{$cursql}{all_plans}}, $plh ;
+	}
+	&elem($cursor,$type,$cpu,$ela,$dr,$cr,$cu,$mis,$rows,$dep,$og,$plh,$tim);
+	$as{total}{count}++;
+	no strict;
+	for my $m (qw(cpu ela dr cr cu rows mis )) {
+		$as{$cursql}{$type}{$m} += $$m;
+		$as{$cursql}{$m}+= $$m;
+		$as{total}{$type}{$m} += $$m;
+		$as{total}{$m}+= $$m;
+	}
+	use strict;
+} # recap_pef 
+## +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+## tuple %basetrc des CLOSE
+## c=0,e=16,dep=0,type=0,tim=1399295614046567
+our $clmatch = '^CLOSE #(\d+):c=(\d+),e=(\d+),dep=(\d+),type=(\d+),tim=(\d+)';
+our $clexp = '($cursor,$cpu,$ela,$dep,$cltyp,$tim) = ($1,$2,$3,$4,$5,$6)';
+sub recap_close {
+	if ( my $cursql = $ac{$cursor}{sqlid}) {
+   	$as{$cursql}{close}{count}++;
+   	$as{$cursql}{count}++;
+   	$as{total}{count}++;
+   	&close( $cursor, $cpu, $ela, $tim );
+   	no strict;
+   	for my $m (qw(cpu ela )) {
+   		$as{$cursql}{$type}{$m} += $$m;
+   		$as{$cursql}{$m}+= $$m;
+   		$as{total}{$type}{$m} += $$m;
+   		$as{total}{$m}+= $$m;
+   	}
+   	use strict;
+	}
+} # recap_close
+
+## +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+## tuple %basetrc des WAITs
+##
+our $wtmatch = '^WAIT #(\d+): nam=\'([^\']+)\' ela= (\d+)';
+our $wtexp = '($cursor,$ev,$wela) = ($1,$2,$3)';
+sub recap_wait {
+	# On incremente le nombre d'attentes et le temps d'attente global
+	# pour l'event courant
+	$aw{ $ev }{ count }++;					
+	$aw{ $ev }{ ela } += $wela;
+	
+	# Et on fait de même pour le curseur courant
+	$ac{$cursor}{waits}{$ev}{count}++;
+	$ac{$cursor}{waits}{$ev}{ela} += $wela;
+
+} # recap_wait
+
+## +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+## tuple %basetrc des STATs
+##
+our $stmatch = '^STAT #(\d+) id=(\d+) cnt=(\d+) pid=(\d+) pos=(\d+) obj=(\d+) op=\'([^\']+)\'';
+our $stexp = '($cursor,$rank,$rows,$pos,$op) = ($1,$2,$3,$4,$7)';
+sub recap_stat {
+	my $current_plan = $ac{$cursor}{current}{plan_hash};
+	my $currank=$rank-1;
+	$plans{ $current_plan }{steps}->[$currank] = [$rows,$pos,$op] unless defined $plans{ $current_plan }{steps}->[$currank];
+	
+} # recap_stat
+
+my %basetrc;
+## +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+## %basetrc
+##
+## Ensemble des tuples :
+##		-	expression à matcher (expr)
+##		-	opération d'affectation après match (aff)
+##		-	fonction d'agrégation des valeurs obtenues (func)
+##	servant à parser le fichier de trace
+#
+%basetrc = (
+	"first_tim"	 => { expr => 'tim=(\d+)', 
+							aff  => '$first_tim = $1',
+							func => sub {delete $basetrc{first_tim}; }, 
+					},
+	"PARSING" => { expr => $picmatch,
+		aff => $picexp,
+		func => \&recap_parsing,
+	},
+	"PEF"	  => { expr => $pefmatch,
+		aff => $pefexp,
+		func => \&recap_pef,
+	},
+	"WAIT"	  => { expr => $wtmatch,
+		aff => $wtexp,
+		func => \&recap_wait,
+	},
+	"STAT"	  => { expr => $stmatch,
+		aff => $stexp,
+		func => \&recap_stat,
+	},
+	"CLOSE"	  => { expr => $clmatch,
+		aff => $clexp,
+		func => \&recap_close,
+	},
+	);
+## /////////////////////////////////////////////////////////////////
+
+## +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+## choose_format
+##
+## Paramètres:
+##	- le nom d'un format d'affichage,
+##	- le nom d'un format d'affichage d'entête
+##	
+##	Affecte à la sortie standard les paramètres d'affichage voulus.
+#
+sub choose_format {
+	my ($of, $fmt,$fmttop) = @_;
+	format_name     $of $fmt;
+	format_top_name $of $fmttop;
+} # choose_format
+## /////////////////////////////////////////////////////////////////
+
+## +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+## display_summary
+##
+## Paramètres:
+##	- Un critere de tri
+##	
+##	Affiche les métriques agrégées par sql_id
+#
+sub display_summary {
+	my	($sort) = @_;
+no warnings;
+format SUMMARY_TOP =
+Sql_id           Parse   Exec    Fetch   Cpu(ms)     Elapsed(ms) Disk reads  CR          Current     Rows
+---------------- ------- ------- ------- ----------- ----------- ----------- ----------- ----------- -----------
+.
+format SUMMARY =
+@<<<<<<<<<<<<<   @###### @###### @###### @########## @########## @########## @########## @########## @########## 
+$k,$as{$k}{'PARSE'}{count},$as{$k}{'EXEC'}{count},$as{$k}{'FETCH'}{count},$as{$k}{cpu}/1000,$as{$k}{ela}/1000,$as{$k}{dr},$as{$k}{cr},$as{$k}{cu},$as{$k}{rows}
+.
+use warnings;
+choose_format( $OUTF, 'SUMMARY', 'SUMMARY_TOP');
+my $cnt=0;
+for $k (sort { $as{$b}{$sort} <=>  $as{$a}{$sort} } keys %as ) { 
+	$cnt++;
+	if ($top>0 && $cnt>$top) { last; }
+	write $OUTF;
+	}
+} # display_summary
+## /////////////////////////////////////////////////////////////////
+
+## +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+## display_waits
+##
+## Paramètres:
+##	- un hash d'event contenant, pour chaque event, un nombre
+##	  d'occurrences (count) et une durée totale en microsecondes
+##	  (ela).
+##
+## Affiche les wait event stockés dans le hash en les triant par
+## durées totales décroissantes.
+##
+sub display_waits {
+	my $src = shift;
+format WAITS_TOP =
+
+Event                            Count      Total wait Avg wait
+-------------------------------- ---------- ---------- ------------
+.
+format WAITS =
+@<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< @######### @######### @#######.### 
+$ev, $src->{$ev}{count}, $src->{$ev}{ela}/1000, $src->{$ev}{ela}/(1000*$src->{$ev}{count})
+.
+
+choose_format($OUTF,  'WAITS', 'WAITS_TOP');
+for $ev (sort {$src->{$b}{ela} <=> $src->{$a}{ela}} keys %{$src} ) { write $OUTF; }
+} # display_waits
+## /////////////////////////////////////////////////////////////////
+
+## +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+## format_sql
+##
+## Paramètres:
+## 	- Un ordre SQL dans une chaîne de caractères
+##
+##	Reformate l'ordre SQL avec Text::Wrap en effectuant les césures 
+##	sur les virgules et les espaces, de façon à ce que les 
+##	lignes ne dépassent pas $sqlmaxlen caractères.
+##
+#
+sub format_sql {
+	my $sqltext = shift;
+	return wrap('', '', $sqltext);
+} # format_sql
+## /////////////////////////////////////////////////////////////////
+
+## +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+## display_plan
+##
+## Paramètres:
+##	un plan hash value
+##		- lignes traitées
+##		- décalage sur la ligne
+##		- opération
+##
+##	Affiche les informations relatives aux plan
+#
+sub display_plan {
+	my $plan=shift;
+	if (!defined $plans{$plan}) { return; }	
+format PLAN_TOP=
+Rows        Operation
+----------- --------------------------------------------------------------------------------------
+.
+format PLAN=
+@########## @<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+$rows, $fmtop
+.
+	my @pos;
+	my $mult = -1;
+	choose_format($OUTF,  'PLAN', 'PLAN_TOP' );
+	for $id (@{$plans{$plan}{steps}}) {
+		$rows = $id->[0];
+		$ofs = $id->[1];
+		if ($pos[$ofs]) { $mult = $pos[$ofs] } else { $mult++; $pos[$ofs] = $mult; }
+		$fmtop  = " "x$mult . $id->[2];	
+		write $OUTF;
+	}
+} # display_plan
+## /////////////////////////////////////////////////////////////////
+
+## +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+## display_sqlid_txt
+##
+## Paramètres:
+## 	- Un sql_id
+##		- Un flag indiquant si on affiche le plan
+##		- Un flag indiquant si on affiche les waits
+##
+##	Affiche les informations relatives à un sql_id
+#
+sub display_sqlid_txt {
+	my ($id, $dplan, $dwait) = @_;
+	format SQL_TOP=
+@<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+$pretty_delim
+                                                 start of sql_id: @<<<<<<<<<<<<
+$id
+
+.
+
+	format SQL=
+
+              Count         CPU     Elapsed      Miss      Rows
+        ----------- ----------- ----------- --------- --------- 
+Parse : @########## @#######.## @#######.## @######## @########
+$as{$id}{PARSE}{count}, $as{$id}{PARSE}{cpu}/1000, $as{$id}{PARSE}{ela}/1000,$as{$id}{PARSE}{mis},$as{$id}{PARSE}{rows},
+Exec  : @########## @#######.## @#######.## @######## @########
+$as{$id}{EXEC}{count}, $as{$id}{EXEC}{cpu}/1000, $as{$id}{EXEC}{ela}/1000,$as{$id}{EXEC}{mis},$as{$id}{EXEC}{rows},
+Fetch : @########## @#######.## @#######.## @######## @########
+$as{$id}{FETCH}{count}, $as{$id}{FETCH}{cpu}/1000, $as{$id}{FETCH}{ela}/1000,$as{$id}{FETCH}{mis},$as{$id}{FETCH}{rows},
+        ----------- ----------- ----------- --------- ---------
+Total : @########## @#######.## @#######.## @######## @########
+$as{$id}{count}, $as{$id}{cpu}/1000, $as{$id}{ela}/1000,$as{$id}{mis},$as{$id}{rows}
+Full SQL Text:
+
+@*
+&format_sql($as{$id}{text})
+
+                                                   end of sql_id: @<<<<<<<<<<<<
+$id
+@<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+$pretty_delim
+
+.
+
+	choose_format($OUTF, 'SQL', 'SQL_TOP');
+	write $OUTF;
+
+	if ($dplan) {
+		for $plan (@{$as{$id}{all_plans}}) {
+			printf $OUTF, "sqlid: %s - plan hash value: %d\n", $id, $plan;
+			display_plan( $plan );
+		}
+	}
+	&display_waits( $as{$id}{waits} ) if ($dwait);
+
+} # display_sqlid_txt
+## /////////////////////////////////////////////////////////////////
+
+
+## +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+## display_sqlid_html
+##
+## Paramètres:
+## 	- Un sql_id
+##		- Un flag indiquant si on affiche le plan
+##		- Un flag indiquant si on affiche les waits
+##
+##	Affiche les informations relatives à un sql_id
+#
+sub display_sqlid_html {
+	my ($id, $dplan, $dwait) = @_;
+
+	format SQL_TOP=
+@<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+$pretty_delim
+                                                 start of sql_id: @<<<<<<<<<<<<
+$id
+
+.
+
+	format SQL=
+
+              Count         CPU     Elapsed      Miss      Rows
+        ----------- ----------- ----------- --------- --------- 
+Parse : @########## @#######.## @#######.## @######## @########
+$as{$id}{PARSE}{count}, $as{$id}{PARSE}{cpu}/1000, $as{$id}{PARSE}{ela}/1000,$as{$id}{PARSE}{mis},$as{$id}{PARSE}{rows},
+Exec  : @########## @#######.## @#######.## @######## @########
+$as{$id}{EXEC}{count}, $as{$id}{EXEC}{cpu}/1000, $as{$id}{EXEC}{ela}/1000,$as{$id}{EXEC}{mis},$as{$id}{EXEC}{rows},
+Fetch : @########## @#######.## @#######.## @######## @########
+$as{$id}{FETCH}{count}, $as{$id}{FETCH}{cpu}/1000, $as{$id}{FETCH}{ela}/1000,$as{$id}{FETCH}{mis},$as{$id}{FETCH}{rows},
+        ----------- ----------- ----------- --------- ---------
+Total : @########## @#######.## @#######.## @######## @########
+$as{$id}{count}, $as{$id}{cpu}/1000, $as{$id}{ela}/1000,$as{$id}{mis},$as{$id}{rows}
+Full SQL Text:
+
+@*
+&format_sql($as{$id}{text})
+
+                                                   end of sql_id: @<<<<<<<<<<<<
+$id
+@<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+$pretty_delim
+
+.
+
+	choose_format($OUTF, 'SQL', 'SQL_TOP');
+	write $OUTF;
+
+	if ($dplan) {
+		for $plan (@{$as{$id}{all_plans}}) {
+			printf $OUTF, "sqlid: %s - plan hash value: %d\n", $id, $plan;
+			display_plan( $plan );
+		}
+	}
+	&display_waits( $as{$id}{waits} ) if ($dwait);
+
+} # display_sqlid1_html
+## /////////////////////////////////////////////////////////////////
+
+## +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+## display_sqlid2
+##
+## Paramètres:
+## 	- Un sql_id
+##		- Un flag indiquant si on affiche le plan
+##		- Un flag indiquant si on affiche les waits
+##
+##	Affiche les informations relatives à un sql_id
+#
+sub display_sqlid2 {
+	my ($id, $dplan, $dwait) = @_;
+	use Data::Dumper;
+	print $OUTF, $pretty_delim . "\n" . $id . "\n";
+	print $OUTF, Dumper( $as{$id}{history} );
+
+} # display_sqlid2
+## /////////////////////////////////////////////////////////////////
+
+my $display_sqlid = \&display_sqlid_txt;
+## +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+## display_all_sql
+##
+## Paramètres:
+## 	- critere de tri (ela par defaut)
+##		- affichage ou non du plan (defaut: y)
+##		- affichage ou non des waits (defaut: n)
+##		- affichage non agrégé	(tbc)
+##
+##	Affiche les informations relatives aux sql_id recensés
+#
+sub display_all_sql {
+	my ($sort, $dplan, $dwait) = @_;
+	for $id (sort {$as{$b}{$sort} <=> $as{$a}{$sort}} keys %as ) { 
+		next if $id eq "total" or $id eq "";
+		$display_sqlid->( $id, $dplan, $dwait );
+	}
+} # display_all_sql
+## /////////////////////////////////////////////////////////////////
+
+## \\\\\\\\\\\\\\ MAIN \\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\
+&process_options();
+
+while (<$INF>) {										# lit l'entrée standard
+	for $k (keys %basetrc) {					# pour chaque référence 
+		if (/$basetrc{$k}{expr}/) { 			# match?
+			eval $basetrc{$k}{aff}; 			# oui, evaluation de l'affectat.
+			&{$basetrc{$k}{func}}($k);			# et appel de la fonction de trt
+			next unless $k eq "first_tim";	# on ne matche qu'une expression
+		}
+	}
+}
+# On sauve le dernier curseur
+save_current_exec_specs( $cursor );
+
+printf($OUTF, "%ld - %ld : %ld\n", $first_tim, $tim , $tim - $first_tim );
+&display_summary( $sort );
+&display_all_sql( $sort, 1, $waits );
+
+## \\\\\\\\\\\\\\ MAIN END \\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\
