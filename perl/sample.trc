@@ -1,0 +1,216 @@
+Trace file /app/oracle/diag/rdbms/grffa/ROUGE/trace/ROUGE_ora_8729.trc
+Oracle Database 11g Enterprise Edition Release 11.2.0.3.0 - 64bit Production
+With the Partitioning, OLAP, Data Mining and Real Application Testing options
+ORACLE_HOME = /app/oracle/product/11.2.0/db1
+System name:	Linux
+Node name:	clio.nop.local
+Release:	2.6.39-200.24.1.el6uek.x86_64
+Version:	#1 SMP Sat Jun 23 02:39:07 EDT 2012
+Machine:	x86_64
+Instance name: ROUGE
+Redo thread mounted by this instance: 1
+Oracle process number: 27
+Unix process pid: 8729, image: oracle@clio.nop.local (TNS V1-V3)
+
+
+*** 2014-08-09 18:35:23.373
+*** SESSION ID:(31.21) 2014-08-09 18:35:23.373
+*** CLIENT ID:() 2014-08-09 18:35:23.373
+*** SERVICE NAME:(SYS$USERS) 2014-08-09 18:35:23.373
+*** MODULE NAME:(SQL*Plus) 2014-08-09 18:35:23.373
+*** ACTION NAME:() 2014-08-09 18:35:23.373
+ 
+WAIT #139984483425792: nam='SQL*Net message to client' ela= 1 driver id=1650815232 #bytes=1 p3=0 obj#=-1 tim=1407602123373303
+WAIT #139984483425792: nam='SQL*Net message from client' ela= 95 driver id=1650815232 #bytes=1 p3=0 obj#=-1 tim=1407602123373614
+CLOSE #139984483425792:c=0,e=2,dep=0,type=1,tim=1407602123373632
+=====================
+PARSING IN CURSOR #139984483406912 len=39 dep=0 uid=83 oct=42 lid=83 tim=1407602123373661 hv=2250826155 ad='0' sqlid='ga3k3ck32jsdb'
+alter session set optimizer_mode = rule
+END OF STMT
+PARSE #139984483406912:c=0,e=14,p=0,cr=0,cu=0,mis=0,r=0,dep=0,og=0,plh=0,tim=1407602123373660
+EXEC #139984483406912:c=0,e=32,p=0,cr=0,cu=0,mis=0,r=0,dep=0,og=0,plh=0,tim=1407602123373727
+WAIT #139984483406912: nam='SQL*Net message to client' ela= 1 driver id=1650815232 #bytes=1 p3=0 obj#=-1 tim=1407602123373740
+WAIT #139984483406912: nam='SQL*Net message from client' ela= 98 driver id=1650815232 #bytes=1 p3=0 obj#=-1 tim=1407602123373846
+CLOSE #139984483406912:c=0,e=2,dep=0,type=1,tim=1407602123373863
+=====================
+PARSING IN CURSOR #139984483406040 len=73 dep=0 uid=83 oct=47 lid=83 tim=1407602123373908 hv=2192507904 ad='c123bc08' sqlid='c14fht21ay100'
+begin
+   :empno := 7900;
+   :ename := 'JAMES';
+   :job   := 'CLERK';
+end;
+END OF STMT
+PARSE #139984483406040:c=0,e=30,p=0,cr=0,cu=0,mis=0,r=0,dep=0,og=3,plh=0,tim=1407602123373907
+BINDS #139984483406040:
+ Bind#0
+  oacdty=02 mxl=22(22) mxlc=00 mal=00 scl=00 pre=00
+  oacflg=03 fl2=1000000 frm=00 csi=00 siz=88 off=0
+  kxsbbbfp=7f50ad684c50  bln=22  avl=00  flg=05
+ Bind#1
+  oacdty=01 mxl=32(10) mxlc=00 mal=00 scl=00 pre=00
+  oacflg=03 fl2=1000000 frm=01 csi=01 siz=0 off=24
+  kxsbbbfp=7f50ad684c68  bln=32  avl=00  flg=01
+ Bind#2
+  oacdty=01 mxl=32(10) mxlc=00 mal=00 scl=00 pre=00
+  oacflg=03 fl2=1000000 frm=01 csi=01 siz=0 off=56
+  kxsbbbfp=7f50ad684c88  bln=32  avl=00  flg=01
+WAIT #139984483406040: nam='SQL*Net message to client' ela= 1 driver id=1650815232 #bytes=1 p3=0 obj#=-1 tim=1407602123374021
+EXEC #139984483406040:c=0,e=82,p=0,cr=0,cu=0,mis=0,r=1,dep=0,og=3,plh=0,tim=1407602123374029
+WAIT #139984483406040: nam='SQL*Net message from client' ela= 69 driver id=1650815232 #bytes=1 p3=0 obj#=-1 tim=1407602123374098
+CLOSE #139984483406040:c=0,e=7,dep=0,type=1,tim=1407602123374120
+=====================
+PARSING IN CURSOR #139984483405168 len=157 dep=0 uid=83 oct=3 lid=83 tim=1407602123374418 hv=3096378297 ad='b8eb0e78' sqlid='3t83ucyw8xyxt'
+select sal, grade from emp, salgrade where empno = :empno and ename = :ename and job = :job
+and ename = :ename and job = :job
+and sal between losal and hisal
+END OF STMT
+PARSE #139984483405168:c=0,e=283,p=0,cr=0,cu=0,mis=1,r=0,dep=0,og=3,plh=0,tim=1407602123374418
+BINDS #139984483405168:
+ Bind#0
+  oacdty=02 mxl=22(22) mxlc=00 mal=00 scl=00 pre=00
+  oacflg=03 fl2=1000000 frm=00 csi=00 siz=88 off=0
+  kxsbbbfp=7f50ad684870  bln=22  avl=02  flg=05
+  value=7900
+ Bind#1
+  oacdty=01 mxl=32(10) mxlc=00 mal=00 scl=00 pre=00
+  oacflg=03 fl2=1000000 frm=01 csi=01 siz=0 off=24
+  kxsbbbfp=7f50ad684888  bln=32  avl=05  flg=01
+  value="JAMES"
+ Bind#2
+  oacdty=01 mxl=32(10) mxlc=00 mal=00 scl=00 pre=00
+  oacflg=03 fl2=1000000 frm=01 csi=01 siz=0 off=56
+  kxsbbbfp=7f50ad6848a8  bln=32  avl=05  flg=01
+  value="CLERK"
+ Bind#4
+  No oacdef for this bind.
+ Bind#4
+  No oacdef for this bind.
+EXEC #139984483405168:c=1000,e=1639,p=0,cr=0,cu=0,mis=1,r=0,dep=0,og=3,plh=3805476082,tim=1407602123376091
+WAIT #139984483405168: nam='SQL*Net message to client' ela= 1 driver id=1650815232 #bytes=1 p3=0 obj#=-1 tim=1407602123376119
+FETCH #139984483405168:c=0,e=84,p=0,cr=9,cu=0,mis=0,r=1,dep=0,og=3,plh=3805476082,tim=1407602123376216
+WAIT #139984483405168: nam='SQL*Net message from client' ela= 103 driver id=1650815232 #bytes=1 p3=0 obj#=-1 tim=1407602123376340
+FETCH #139984483405168:c=0,e=10,p=0,cr=1,cu=0,mis=0,r=0,dep=0,og=3,plh=3805476082,tim=1407602123376366
+STAT #139984483405168 id=1 cnt=1 pid=0 pos=1 obj=0 op='NESTED LOOPS  (cr=10 pr=0 pw=0 time=82 us)'
+STAT #139984483405168 id=2 cnt=1 pid=1 pos=1 obj=75335 op='TABLE ACCESS BY INDEX ROWID EMP (cr=2 pr=0 pw=0 time=31 us)'
+STAT #139984483405168 id=3 cnt=1 pid=2 pos=1 obj=75336 op='INDEX UNIQUE SCAN PK_EMP (cr=1 pr=0 pw=0 time=16 us)'
+STAT #139984483405168 id=4 cnt=1 pid=1 pos=2 obj=75338 op='TABLE ACCESS FULL SALGRADE (cr=8 pr=0 pw=0 time=49 us)'
+WAIT #139984483405168: nam='SQL*Net message to client' ela= 0 driver id=1650815232 #bytes=1 p3=0 obj#=-1 tim=1407602123376430
+WAIT #139984483405168: nam='SQL*Net message from client' ela= 152 driver id=1650815232 #bytes=1 p3=0 obj#=-1 tim=1407602123376590
+XCTEND rlbk=0, rd_only=1, tim=1407602123376622
+=====================
+PARSING IN CURSOR #139984483403128 len=447 dep=1 uid=0 oct=2 lid=0 tim=1407602123376689 hv=1097020010 ad='c120f720' sqlid='f711myt0q6cma'
+insert into sys.aud$( sessionid,entryid,statement,ntimestamp#, userid,userhost,terminal,action#,returncode, logoff$lread,logoff$pread,logoff$lwrite,logoff$dead, logoff$time,comment$text,spare1,clientid,sessioncpu,proxy$sid,user$guid, instance#,process#,auditid,dbid) values(:1,:2,:3,SYS_EXTRACT_UTC(SYSTIMESTAMP),     :4,:5,:6,:7,:8,     :9,:10,:11,:12,     cast(SYS_EXTRACT_UTC(systimestamp) as date),:13,:14,:15,:16,:17,:18,     :19,:20,:21,:22)
+END OF STMT
+PARSE #139984483403128:c=0,e=38,p=0,cr=0,cu=0,mis=0,r=0,dep=1,og=3,plh=0,tim=1407602123376689
+BINDS #139984483403128:
+ Bind#0
+  oacdty=02 mxl=22(22) mxlc=00 mal=00 scl=00 pre=00
+  oacflg=08 fl2=0001 frm=00 csi=00 siz=24 off=0
+  kxsbbbfp=7f50ad683c98  bln=22  avl=04  flg=05
+  value=160196
+ Bind#1
+  oacdty=02 mxl=22(22) mxlc=00 mal=00 scl=00 pre=00
+  oacflg=08 fl2=0001 frm=00 csi=00 siz=24 off=0
+  kxsbbbfp=7f50ad683c58  bln=24  avl=02  flg=05
+  value=2
+ Bind#2
+  oacdty=02 mxl=22(22) mxlc=00 mal=00 scl=00 pre=00
+  oacflg=08 fl2=0001 frm=00 csi=00 siz=24 off=0
+  kxsbbbfp=7f50ad683068  bln=24  avl=02  flg=05
+  value=1
+ Bind#3
+  oacdty=01 mxl=32(05) mxlc=00 mal=00 scl=00 pre=00
+  oacflg=18 fl2=0001 frm=01 csi=01 siz=32 off=0
+  kxsbbbfp=7f50ad65f8c4  bln=32  avl=05  flg=09
+  value="SCOTT"
+ Bind#4
+  oacdty=01 mxl=32(14) mxlc=00 mal=00 scl=00 pre=00
+  oacflg=18 fl2=0001 frm=01 csi=01 siz=32 off=0
+  kxsbbbfp=7f50ad65f83e  bln=32  avl=14  flg=09
+  value="clio.nop.local"
+ Bind#5
+  oacdty=01 mxl=32(05) mxlc=00 mal=00 scl=00 pre=00
+  oacflg=18 fl2=0001 frm=01 csi=01 siz=32 off=0
+  kxsbbbfp=c282313c  bln=32  avl=05  flg=09
+  value="pts/4"
+ Bind#6
+  oacdty=02 mxl=22(22) mxlc=00 mal=00 scl=00 pre=00
+  oacflg=08 fl2=0001 frm=00 csi=00 siz=24 off=0
+  kxsbbbfp=7f50ad683038  bln=24  avl=03  flg=05
+  value=101
+ Bind#7
+  oacdty=02 mxl=22(22) mxlc=00 mal=00 scl=00 pre=00
+  oacflg=08 fl2=0001 frm=00 csi=00 siz=24 off=0
+  kxsbbbfp=7f50ad683008  bln=24  avl=01  flg=05
+  value=0
+ Bind#8
+  oacdty=02 mxl=22(22) mxlc=00 mal=00 scl=00 pre=00
+  oacflg=08 fl2=0001 frm=00 csi=00 siz=24 off=0
+  kxsbbbfp=7f50ad682fd8  bln=24  avl=02  flg=05
+  value=53
+ Bind#9
+  oacdty=02 mxl=22(22) mxlc=00 mal=00 scl=00 pre=00
+  oacflg=08 fl2=0001 frm=00 csi=00 siz=24 off=0
+  kxsbbbfp=7f50ad682fa8  bln=24  avl=01  flg=05
+  value=0
+ Bind#10
+  oacdty=02 mxl=22(22) mxlc=00 mal=00 scl=00 pre=00
+  oacflg=08 fl2=0001 frm=00 csi=00 siz=24 off=0
+  kxsbbbfp=7f50ad682f78  bln=24  avl=02  flg=05
+  value=4
+ Bind#11
+  oacdty=02 mxl=22(22) mxlc=00 mal=00 scl=00 pre=00
+  oacflg=08 fl2=0001 frm=00 csi=00 siz=24 off=0
+  kxsbbbfp=7f50ad682f48  bln=24  avl=01  flg=05
+  value=0
+ Bind#12
+  oacdty=01 mxl=32(00) mxlc=00 mal=00 scl=00 pre=00
+  oacflg=18 fl2=0001 frm=01 csi=01 siz=32 off=0
+  kxsbbbfp=00000000  bln=32  avl=00  flg=09
+ Bind#13
+  oacdty=01 mxl=32(06) mxlc=00 mal=00 scl=00 pre=00
+  oacflg=18 fl2=0001 frm=01 csi=01 siz=32 off=0
+  kxsbbbfp=c28230c8  bln=32  avl=06  flg=09
+  value="oracle"
+ Bind#14
+  oacdty=01 mxl=32(00) mxlc=00 mal=00 scl=00 pre=00
+  oacflg=18 fl2=0001 frm=01 csi=01 siz=32 off=0
+  kxsbbbfp=00000000  bln=32  avl=00  flg=09
+ Bind#15
+  oacdty=02 mxl=22(22) mxlc=00 mal=00 scl=00 pre=00
+  oacflg=08 fl2=0001 frm=00 csi=00 siz=24 off=0
+  kxsbbbfp=7f50ad682f18  bln=24  avl=01  flg=05
+  value=0
+ Bind#16
+  oacdty=02 mxl=22(00) mxlc=00 mal=00 scl=00 pre=00
+  oacflg=08 fl2=0001 frm=00 csi=00 siz=24 off=0
+  kxsbbbfp=7f50ad682ee8  bln=24  avl=00  flg=05
+ Bind#17
+  oacdty=01 mxl=32(00) mxlc=00 mal=00 scl=00 pre=00
+  oacflg=18 fl2=0001 frm=01 csi=01 siz=32 off=0
+  kxsbbbfp=00000000  bln=32  avl=00  flg=09
+ Bind#18
+  oacdty=02 mxl=22(22) mxlc=00 mal=00 scl=00 pre=00
+  oacflg=08 fl2=0001 frm=00 csi=00 siz=24 off=0
+  kxsbbbfp=7f50ad682eb8  bln=24  avl=01  flg=05
+  value=0
+ Bind#19
+  oacdty=01 mxl=32(04) mxlc=00 mal=00 scl=00 pre=00
+  oacflg=18 fl2=0001 frm=01 csi=01 siz=32 off=0
+  kxsbbbfp=7fff3025f190  bln=32  avl=04  flg=09
+  value="8729"
+ Bind#20
+  oacdty=01 mxl=32(00) mxlc=00 mal=00 scl=00 pre=00
+  oacflg=18 fl2=0001 frm=01 csi=01 siz=32 off=0
+  kxsbbbfp=00000000  bln=32  avl=00  flg=09
+ Bind#21
+  oacdty=02 mxl=22(22) mxlc=00 mal=00 scl=00 pre=00
+  oacflg=08 fl2=0001 frm=00 csi=00 siz=24 off=0
+  kxsbbbfp=7f50ad682e88  bln=24  avl=06  flg=05
+  value=1657591335
+EXEC #139984483403128:c=1000,e=891,p=0,cr=1,cu=2,mis=0,r=1,dep=1,og=3,plh=0,tim=1407602123377657
+STAT #139984483403128 id=1 cnt=0 pid=0 pos=1 obj=0 op='LOAD TABLE CONVENTIONAL  (cr=1 pr=0 pw=0 time=164 us)'
+CLOSE #139984483403128:c=0,e=5,dep=1,type=1,tim=1407602123377712
+WAIT #0: nam='log file sync' ela= 2280 buffer#=9577 sync scn=1262169 p3=0 obj#=-1 tim=1407602123380128
+CLOSE #139984483405168:c=0,e=4,dep=0,type=0,tim=1407602123380155
+CLOSE #139984483368776:c=0,e=3,dep=0,type=0,tim=1407602123380171
