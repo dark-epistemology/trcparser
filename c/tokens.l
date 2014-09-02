@@ -2,33 +2,46 @@
 #include "y.tab.h"
 %}
 
-digit    [0-9]
-letter   [a-z]
+digit    [0-9]+
+sqlid    '[0123456789abcdfghjkmnpqrstuvwxyz]{13}'
+address  '[0123456789abcdf]{1,8}'
+
+%s PIC
+%x SQLTEXT
 
 %%
-"PARSING IN CURSOR"   { return ACT_PIC;            }
-"len="                { return ATR_LENGTH;         }
-"dep="                { return ATR_DEPTH;          }
-"uid="                { return ATR_UID;            } /* effective user id */
-"oct="                { return ATR_SQLCOMMAND;     }
-"lid="                { return ATR_RID;            } /* real user id */
-"tim="                { return ATR_EPOCH;          }
-"hv="                 { return ATR_HASHVALUE;      }
-"ad="                 { return ATR_ADDRESS;        }
-"sqlid="              { return ATR_SQLID;          }
+"^PARSING IN CURSOR #"  { BEGIN(PIC); return ACT_PIC;    }
+<PIC>digit              { return NB;                     }
+<PIC>" len="            { return ATR_LENGTH;             }
+<PIC>" dep="            { return ATR_DEPTH;              }
+<PIC>" uid="            { return ATR_UID;                } /* effective user id */
+<PIC>" oct="            { return ATR_SQLCOMMAND;         }
+<PIC>" lid="            { return ATR_RID;                } /* real user id */
+<PIC>" tim="            { return ATR_PIC_EPOCH;          }
+<PIC>" hv="             { return ATR_HASHVALUE;          }
+<PIC>" ad="             { return ATR_ADDRESS;            }
+<PIC>address            { return ADDRESS;                }
+<PIC>" sqlid='"         { return ATR_SQLID;              }
+<PIC>sqlid              { return SQLID;                  }
+<PIC>\n                 BEGIN( SQLTEXT );
 
-"PARSE"               { return ACT_PARSE;          }
-"EXEC"                { return ACT_EXEC;           }
-"FETCH"               { return ACT_FETCH;           }
-"c="                  { return ATR_CPU;            }
-"e="                  { return ATR_ELAPSED;        }
-"p="                  { return ATR_PHYSRD;         }
-"cr="                 { return ATR_CONSISTENT;     }
-"cu="                 { return ATR_CURRENT;        }
-"mis="                { return ATR_MISS;           }
-"r="                  { return ATR_NUMROWS;        }
-"og="                 { return ATR_OPTGOAL;        }
-"plh="                { return ATR_PLANHASH;       }
+<SQLTEXT>.*             { return TEXT;                   }
+<SQLTEXT>"END OF STMT$" { BEGIN(INITIAL);                }
+
+"^PARSE #"              { BEGIN(PEF);  return ACT_PARSE; }
+"^EXEC #"               { BEGIN(PEF);  return ACT_EXEC;  }
+"^FETCH"                { BEGIN(PEF);  return ACT_FETCH; }
+<PEF>digit              { return NB;                     }
+<PEF>":c="                 { return ATR_CPU;            }
+<PEF>",e="                 { return ATR_ELAPSED;        }
+<PEF>",p="                 { return ATR_PHYSRD;         }
+<PEF>",cr="                { return ATR_CONSISTENT;     }
+<PEF>",cu="                { return ATR_CURRENT;        }
+<PEF>",mis="               { return ATR_MISS;           }
+<PEF>",r="                 { return ATR_NUMROWS;        }
+<PEF>",og="                { return ATR_OPTGOAL;        }
+<PEF>",plh="               { return ATR_PLANHASH;       }
+<PEF>",tim="               { return ATR_PEF_EPOCH;      }
 
 "CLOSE"               { return ACT_CLOSE;          }
 "type="               { return ATR_TYPE;           }

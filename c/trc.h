@@ -23,8 +23,8 @@ typedef struct PIC_tag {
    uint_fast32_t  oct;
    uint_fast32_t  rid;
    uint_fast64_t  hv;
-   uint_fast64_t  address;
-   char * sqlid;
+   char *         address;
+   char *         sqlid;
 }  PIC_t;
 
 
@@ -97,5 +97,16 @@ ELEM_t * new_elem( ELEMS nature );
 #define new_close    (CLO_t*) new_elem( CLOSE )
 #define new_wait     (WAI_t*) new_elem( WAIT )
 #define new_stat     (STA_t*) new_elem( STAT )
-
+void add_elem( ELEM_t * ptr );
+PIC_t * new_pic_with_content(
+         uint64_t cursor,
+         uint32_t length,
+         uint32_t depth,
+         uint32_t uid,
+         uint32_t oct,
+         uint32_t rid,
+         uint64_t epoch,
+         char *   hv,
+         char *   sqlid
+         );
 #endif
